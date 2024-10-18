@@ -14,5 +14,5 @@ vim.opt.rtp:prepend(lazypath)
 require("lazy").setup({
     spec = "enwil.lazy",
     change_detection = { notify = false },
-    install = { colorscheme = { "catppuccin-mocha" } }
+    install = { colorscheme = { "tokyonight-moon" } }
 })

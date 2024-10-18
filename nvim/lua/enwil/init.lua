@@ -29,10 +29,10 @@ autocmd('TextYankPost', {
     end,
 })
 
-autocmd({"BufWritePre"}, {
+autocmd({ "BufWritePre" }, {
     group = EnwilGroup,
     pattern = "*",
-    command = [[%s/\s\+$//e]],
+    command = [[%s/\s\+$//e]]
 })
 
 autocmd('LspAttach', {
