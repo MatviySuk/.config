@@ -40,15 +40,12 @@ return {
                 auto_open = false,
             },
             lsp = {
-                color = {
-                    enabled = true,
-                    background = false,
-                    foreground = false,
-                    virtual_text = true,
-                    virtual_text_str = "■",
-                },
                 on_attach = function(client, bufnr)
                     require("lsp-format").on_attach(client, bufnr)
+                    -- Use native color support for Neovim 0.12+
+                    if vim.fn.has("nvim-0.12") == 1 and client.server_capabilities.colorProvider then
+                        vim.lsp.document_color.enable(true, bufnr)
+                    end
                 end,
                 capabilities = capabilities,
                 settings = {

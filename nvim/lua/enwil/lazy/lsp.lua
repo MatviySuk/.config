@@ -1,8 +1,8 @@
 return {
     "neovim/nvim-lspconfig",
     dependencies = {
-        "williamboman/mason.nvim",
-        "williamboman/mason-lspconfig.nvim",
+        "mason-org/mason.nvim",
+        "mason-org/mason-lspconfig.nvim",
         "lukas-reineke/lsp-format.nvim",
         "nmac427/guess-indent.nvim",
         "hrsh7th/cmp-nvim-lsp",
@@ -26,7 +26,6 @@ return {
     },
 
     config = function()
-        local lspconfig = require("lspconfig")
         local cmp = require("cmp")
         local luasnip = require("luasnip")
         local cmp_lsp = require("cmp_nvim_lsp")
@@ -38,65 +37,64 @@ return {
             cmp_lsp.default_capabilities()
         )
 
-        local default_on_attach = function(client, bufnr)
-            require("lsp-format").on_attach(client, bufnr)
-        end
-
         require("fidget").setup({})
         require("mason").setup()
         require("guess-indent").setup({})
+
+        -- Defaults shared by every server (nvim 0.11+ native config)
+        vim.lsp.config("*", { capabilities = capabilities })
+
+        vim.api.nvim_create_autocmd("LspAttach", {
+            group = vim.api.nvim_create_augroup("EnwilLspFormat", {}),
+            callback = function(e)
+                local client = vim.lsp.get_client_by_id(e.data.client_id)
+                if client and client.name ~= "dartls" then -- flutter-tools attaches its own
+                    require("lsp-format").on_attach(client, e.buf)
+                end
+            end,
+        })
+
+        vim.lsp.config("lua_ls", {
+            settings = {
+                Lua = {
+                    runtime = { version = "Lua 5.1" },
+                    diagnostics = {
+                        globals = { "bit", "vim", "it", "describe", "before_each", "after_each" },
+                    }
+                }
+            }
+        })
+
+        -- Swift / Objective-C: sourcekit-lsp ships with Xcode, so it is not
+        -- managed by Mason. For .xcodeproj/.xcworkspace projects, run
+        -- :XcodebuildSetup once so xcode-build-server writes buildServer.json.
+        vim.lsp.config("sourcekit", {
+            cmd = { "xcrun", "sourcekit-lsp" },
+            filetypes = { "swift", "objc", "objcpp" },
+            -- xcode-build-server is `#!/usr/bin/env python3`; Homebrew's
+            -- python 3.14 can't import plistlib on macOS 26.2 (system libexpat
+            -- too old), which silently kills compile flags for .xcodeproj.
+            -- Apple's /usr/bin/python3 works, so prefer it for this server.
+            cmd_env = { PATH = "/usr/bin:" .. vim.env.PATH },
+        })
+        vim.lsp.enable("sourcekit")
+
+        -- Kotlin: JetBrains' official server (Mason package "kotlin-lsp").
+        -- Android extras (:KotlinSync, library sources) live in enwil.kotlin.
+        vim.lsp.config("kotlin_lsp", require("enwil.kotlin").lsp_config())
+
         require("mason-lspconfig").setup({
             ensure_installed = {
                 "ts_ls",
                 "denols",
                 "lua_ls",
                 "rust_analyzer",
+                "marksman",
+                "kotlin_lsp",
+                "lemminx", -- Android XML (manifests, layouts, resources)
             },
-            handlers = {
-                function(server_name)
-                    if server_name == "lua_ls" then
-                        lspconfig.lua_ls.setup({
-                            capabilities = capabilities,
-                            on_attach = default_on_attach,
-                            settings = {
-                                Lua = {
-                                    runtime = { version = "Lua 5.1" },
-                                    diagnostics = {
-                                        globals = { "bit", "vim", "it", "describe", "before_each", "after_each" },
-                                    }
-                                }
-                            }
-                        })
-                    elseif server_name == "sourcekit" then
-                        lspconfig.sourcekit.setup({
-                            cmd = { "xcrun", "sourcekit-lsp" },
-                            filetypes = { "swift" },
-                            root_dir = lspconfig.util.root_pattern("Package.swift", ".git"),
-                            capabilities = capabilities,
-                            on_attach = default_on_attach,
-                        })
-                    elseif server_name == "rust_analyzer" then
-                        lspconfig.rust_analyzer.setup({
-                            capabilities = capabilities,
-                            on_attach = function(client, bufnr)
-                                default_on_attach(client, bufnr)
-
-                                -- client.server_capabilities.completionProvider = true
-                            end,
-                        })
-                    elseif server_name == "ts_ls" then
-                        lspconfig.ts_ls.setup({
-                            capabilities = capabilities,
-                            on_attach = default_on_attach,
-                        })
-                    else
-                        lspconfig[server_name].setup({
-                            capabilities = capabilities,
-                            on_attach = default_on_attach,
-                        })
-                    end
-                end
-            }
+            -- flutter-tools owns dartls
+            automatic_enable = { exclude = { "dartls" } },
         })
 
         vim.diagnostic.config({
@@ -133,10 +131,21 @@ return {
                 { name = "buffer" },
                 { name = "path" },
             }),
+            window = {
+                completion = cmp.config.window.bordered(),
+                documentation = cmp.config.window.bordered(),
+            },
             formatting = {
                 fields = { "abbr", "kind", "menu" },
-                format = function(_, vim_item)
-                    vim_item.abbr = string.sub(vim_item.abbr, 1, 30)
+                format = function(entry, vim_item)
+                    -- Swift labels carry the whole signature (argument labels
+                    -- and types), so keep more of them visible.
+                    if vim.fn.strchars(vim_item.abbr) > 50 then
+                        vim_item.abbr = vim.fn.strcharpart(vim_item.abbr, 0, 49) .. "…"
+                    end
+                    -- Return type / declared type, e.g. "String" for greet(...)
+                    local detail = entry.completion_item.detail
+                    vim_item.menu = detail and vim.fn.strcharpart(detail, 0, 30) or nil
                     return vim_item
                 end,
             },

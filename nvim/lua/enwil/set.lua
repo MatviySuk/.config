@@ -30,3 +30,7 @@ vim.opt.updatetime = 50
 
 vim.opt.colorcolumn = "80"
 
+
+-- Borders on hover docs, diagnostics and other floats (the transparent
+-- NormalFloat would otherwise blend them into the buffer).
+vim.opt.winborder = "rounded"
