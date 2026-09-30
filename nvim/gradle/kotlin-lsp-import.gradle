@@ -1,0 +1,60 @@
+// Gradle init script applied ONLY while kotlin-lsp imports a project
+// (passed via -Dcom.jetbrains.ls.imports.gradle.init.scripts in
+// lua/enwil/kotlin.lua); normal ./gradlew builds never see it.
+// kotlin-lsp deletes init scripts after using them, so it is always given a
+// temporary copy of this file, never this file itself.
+//
+// kotlin-lsp's Android importer drops a whole module as soon as one variant
+// component fails to resolve (github.com/Kotlin/kotlin-lsp/issues/253), which
+// leaves the editor with no classpath: no docs, no go-to-definition, not even
+// for String. To make the import succeed:
+//   * import debug variants only - the importer otherwise queries generated
+//     sources (BuildConfig, KSP) of release/beta variants before they exist,
+//     and those variants often carry CI-only checks (signing, API keys);
+//   * skip androidTest components, whose generated sources the importer
+//     queries before the tasks that produce them have run;
+//   * run the generators (BuildConfig, annotation-processor lists, KSP for
+//     Hilt/Room) before the importer reads their outputs. KSP compiles the
+//     modules it depends on, so the first import takes a while; later ones
+//     are incremental.
+
+def androidPlugins = ["com.android.application", "com.android.library", "com.android.dynamic-feature"]
+
+allprojects { p ->
+    androidPlugins.each { id ->
+        p.pluginManager.withPlugin(id) {
+            def components = p.extensions.getByName("androidComponents")
+            components.beforeVariants(components.selector().all(), { variant ->
+                if (variant.buildType != null && variant.buildType != "debug") {
+                    variant.enable = false
+                    // Build scripts often hook variant tasks in afterEvaluate
+                    // (tasks.named("preBetaBuild")); keep those names resolvable.
+                    def pre = "pre${variant.name.capitalize()}Build"
+                    if (!p.tasks.names.contains(pre)) p.tasks.register(pre)
+                }
+                try {
+                    variant.androidTest.enable = false // AGP 8.x+
+                } catch (Throwable ignored) {
+                    try { variant.enableAndroidTest = false } catch (Throwable ignored2) { }
+                }
+            } as Action)
+        }
+    }
+
+    p.tasks.matching { it.name == "prepareKotlinIdeaImport" }.configureEach { t ->
+        t.dependsOn(p.tasks.matching {
+            it.name ==~ /generate\w*BuildConfig|javaPreCompile\w*|ksp\w*Kotlin/ && !it.name.contains("AndroidTest")
+        })
+    }
+}
+
+// After every build script's afterEvaluate hooks, so their dependsOn calls
+// are already queued and this runs last.
+gradle.projectsEvaluated {
+    allprojects { p ->
+        if (!p.plugins.hasPlugin("com.android.base")) return
+        p.tasks.matching { it.name ==~ /pre\w+Build/ && !it.name.contains("Debug") }.configureEach {
+            it.setDependsOn([])
+        }
+    }
+}

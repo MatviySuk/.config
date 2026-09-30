@@ -11,7 +11,7 @@ return {
             "jsdoc", "bash", "dart", "markdown", "markdown_inline", "templ",
             -- iOS / Android
             "swift", "objc", "kotlin", "java", "groovy", "xml", "json",
-            "yaml", "toml",
+            "yaml", "toml", "python",
         }
 
         -- Only attempt to install if the CLI is available

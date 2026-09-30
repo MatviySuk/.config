@@ -3,6 +3,7 @@ require("enwil.remap")
 require("enwil.lazy_init")
 require("enwil.android")
 require("enwil.ios")
+require("enwil.python")
 
 local augroup = vim.api.nvim_create_augroup
 local EnwilGroup = augroup('Enwil', {})

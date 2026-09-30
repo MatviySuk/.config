@@ -1,0 +1,55 @@
+// Gradle init script used by :KotlinSync (lua/enwil/kotlin.lua).
+// Adds a `lspClasspath` task that prints, per Android module and debug
+// variant, the compile classpath with AARs resolved to their classes.jar plus
+// the matching -sources.jar, so kotlin-lsp can show docs and navigate into
+// AndroidX/Compose. kotlin-lsp's own importer leaves AARs out on AGP 8.
+
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedArtifactResult
+import org.gradle.api.attributes.Attribute
+import org.gradle.jvm.JvmLibrary
+import org.gradle.language.base.artifact.SourcesArtifact
+
+def artifactType = Attribute.of("artifactType", String)
+
+allprojects { p ->
+    p.tasks.register("lspClasspath") {
+        doLast {
+            if (!p.plugins.hasPlugin("com.android.base")) return
+            def variants = [:]
+            p.configurations
+                .findAll { it.name ==~ /\w*[dD]ebug(UnitTest)?CompileClasspath/ && !it.name.contains("AndroidTest") }
+                .each { cfg ->
+                    def artifacts = cfg.incoming.artifactView {
+                        attributes { it.attribute(artifactType, "android-classes-jar") }
+                        lenient = true
+                    }.artifacts.artifacts
+
+                    def moduleIds = artifacts*.id*.componentIdentifier.findAll { it instanceof ModuleComponentIdentifier }
+                    def sources = [:]
+                    p.dependencies.createArtifactResolutionQuery()
+                        .forComponents(moduleIds)
+                        .withArtifacts(JvmLibrary, SourcesArtifact)
+                        .execute().resolvedComponents.each { c ->
+                            c.getArtifacts(SourcesArtifact).findAll { it instanceof ResolvedArtifactResult }.each {
+                                sources[c.id.displayName] = it.file.absolutePath
+                            }
+                        }
+
+                    variants[cfg.name - "CompileClasspath"] = artifacts.collect { a ->
+                        def id = a.id.componentIdentifier
+                        def entry = [id: id.displayName, classes: a.file.absolutePath]
+                        if (id instanceof ProjectComponentIdentifier) entry.project = id.projectPath
+                        if (sources[id.displayName]) entry.sources = sources[id.displayName]
+                        entry
+                    }
+                }
+            println "LSPJSON " + groovy.json.JsonOutput.toJson([
+                project      : p.path,
+                variants     : variants,
+                bootClasspath: p.android.bootClasspath*.absolutePath,
+            ])
+        }
+    }
+}

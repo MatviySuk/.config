@@ -83,6 +83,20 @@ return {
         -- Android extras (:KotlinSync, library sources) live in enwil.kotlin.
         vim.lsp.config("kotlin_lsp", require("enwil.kotlin").lsp_config())
 
+        -- Python: basedpyright + ruff on the project's virtualenv (enwil.python).
+        local basedpyright, ruff = require("enwil.python").lsp_config()
+        vim.lsp.config("basedpyright", basedpyright)
+        vim.lsp.config("ruff", ruff)
+
+        -- Non-LSP tools Mason should keep installed.
+        local registry = require("mason-registry")
+        registry.refresh(function()
+            for _, name in ipairs({ "debugpy" }) do
+                local ok, pkg = pcall(registry.get_package, name)
+                if ok and not pkg:is_installed() then pkg:install() end
+            end
+        end)
+
         require("mason-lspconfig").setup({
             ensure_installed = {
                 "ts_ls",
@@ -91,6 +105,8 @@ return {
                 "rust_analyzer",
                 "marksman",
                 "kotlin_lsp",
+                "basedpyright",
+                "ruff",
                 "lemminx", -- Android XML (manifests, layouts, resources)
             },
             -- flutter-tools owns dartls
